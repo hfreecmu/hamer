@@ -9,15 +9,15 @@ import cv2
 from yacs.config import CfgNode
 from typing import List, Optional
 
-def cam_crop_to_full(cam_bbox, box_center, box_size, img_size, focal_length=5000.):
+def cam_crop_to_full(cam_bbox, box_center, box_size, img_size, cam_cx, cam_cy, focal_length):
     # Convert cam_bbox to full image
     img_w, img_h = img_size[:, 0], img_size[:, 1]
     cx, cy, b = box_center[:, 0], box_center[:, 1], box_size
     w_2, h_2 = img_w / 2., img_h / 2.
     bs = b * cam_bbox[:, 0] + 1e-9
     tz = 2 * focal_length / bs
-    tx = (2 * (cx - w_2) / bs) + cam_bbox[:, 1]
-    ty = (2 * (cy - h_2) / bs) + cam_bbox[:, 2]
+    tx = (2 * (cx - cam_cx) / bs) + cam_bbox[:, 1]
+    ty = (2 * (cy - cam_cy) / bs) + cam_bbox[:, 2]
     full_cam = torch.stack([tx, ty, tz], dim=-1)
     return full_cam
 
@@ -340,7 +340,7 @@ class Renderer:
             mesh_base_color=(1.0, 1.0, 0.9),
             scene_bg_color=(0,0,0),
             render_res=[256, 256],
-            focal_length=None,
+            intrinsics=None,
             is_right=None,
         ):
 
@@ -365,9 +365,9 @@ class Renderer:
         camera_pose = np.eye(4)
         # camera_pose[:3, 3] = camera_translation
         camera_center = [render_res[0] / 2., render_res[1] / 2.]
-        focal_length = focal_length if focal_length is not None else self.focal_length
-        camera = pyrender.IntrinsicsCamera(fx=focal_length, fy=focal_length,
-                                           cx=camera_center[0], cy=camera_center[1], zfar=1e12)
+        # focal_length = focal_length if focal_length is not None else self.focal_length
+        camera = pyrender.IntrinsicsCamera(fx=intrinsics[0], fy=intrinsics[1],
+                                           cx=intrinsics[2], cy=intrinsics[3], zfar=1e12)
 
         # Create camera node and add it to pyRender scene
         camera_node = pyrender.Node(camera=camera, matrix=camera_pose)

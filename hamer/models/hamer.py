@@ -132,11 +132,17 @@ class HAMER(pl.LightningModule):
         output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
         pred_cam_t = pred_cam_t.reshape(-1, 3)
         focal_length = focal_length.reshape(-1, 2)
+
         pred_keypoints_2d = perspective_projection(pred_keypoints_3d,
+                                                   translation=pred_cam_t,
+                                                   focal_length=focal_length / self.cfg.MODEL.IMAGE_SIZE)
+        
+        pred_vertices_2d = perspective_projection(pred_vertices,
                                                    translation=pred_cam_t,
                                                    focal_length=focal_length / self.cfg.MODEL.IMAGE_SIZE)
 
         output['pred_keypoints_2d'] = pred_keypoints_2d.reshape(batch_size, -1, 2)
+        output['pred_vertices_2d'] = pred_vertices_2d.reshape(batch_size, -1, 2)
         return output
 
     def compute_loss(self, batch: Dict, output: Dict, train: bool = True) -> torch.Tensor:
