@@ -340,6 +340,9 @@ def main():
     print('Running inference on images')
     pred_list = []
     for _, img_path in enumerate(tqdm(img_paths)):
+        # debug_num = int(os.path.basename(img_path).split('.')[0])
+        # if debug_num != 13:
+        #     continue
 
         img_cv2 = cv2.imread(str(img_path))
 
@@ -384,7 +387,7 @@ def main():
                 bboxes.append(bbox)
                 is_right.append(1)
 
-        if len(bboxes) == 0:
+        if len(bboxes) == 0 or len(bboxes) > 1:
             pred_dict = {}
             pred_dict['succ'] = False
             pred_dict['img_path'] = str(img_path)
@@ -463,7 +466,10 @@ def main():
                 global_orient = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['global_orient'])[n].detach().cpu().numpy()
                 hand_pose = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['hand_pose'])[n].detach().cpu().numpy()
 
-                jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[0].detach().cpu().numpy()
+                try:
+                    jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[0].detach().cpu().numpy()
+                except:
+                    breakpoint()
                 verts_2d = (out['pred_vertices_2d']*box_size+box_center)[0].detach().cpu().numpy()
                 ###
                 
