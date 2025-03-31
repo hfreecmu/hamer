@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 ### harry
 import pytorch3d.transforms
+from vine_prune.utils.paths import BASE_DATA_DIR
 ###
 
 def visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir):
@@ -271,7 +272,7 @@ from typing import Dict, Optional
 def main():
     parser = argparse.ArgumentParser(description='HaMeR demo code')
     parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
-    parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
+    parser.add_argument('--model_name', type=str, required=True, help='Folder with input images')
     parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
     parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
@@ -280,10 +281,12 @@ def main():
 
     args = parser.parse_args()
     
-    img_folder = os.path.join(args.data_dir, 'undistorted')
-    out_folder = os.path.join(args.data_dir, 'hand_pred')
+    data_dir = os.path.join(BASE_DATA_DIR, args.model_name)
+
+    img_folder = os.path.join(data_dir, 'undistorted')
+    out_folder = os.path.join(data_dir, 'hand_pred')
     vis_folder = os.path.join(out_folder, 'vis')
-    K_path = os.path.join(args.data_dir, 'cam_K.txt')
+    K_path = os.path.join(data_dir, 'cam_K.txt')
 
     # Download and load checkpoints
     # download_models(CACHE_DIR_HAMER)
