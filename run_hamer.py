@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 ### harry
 import pytorch3d.transforms
-from vine_prune.utils.paths import BASE_DATA_DIR
+from vine_prune.utils.paths import get_base_data_dir
 ###
 
 def visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir):
@@ -138,7 +138,7 @@ def project2d_batch(K, pts_cam):
     return pts2d
 
 
-def reform_pred_list(pred_list):
+def reform_pred_list(pred_list, K):
     im_paths = sorted(list(set([pred_dict['img_path'] for pred_dict in pred_list])))
 
     verts_r = np.zeros((len(im_paths), 778, 3))*np.nan
@@ -221,7 +221,8 @@ def reform_pred_list(pred_list):
     verts_l_2d = verts_l_2d.astype(np.float32)
     ###
     
-    K = torch.FloatTensor(pred_list[0]['K'])
+    # K = torch.FloatTensor(pred_list[0]['K'])
+    K = torch.FloatTensor(K)
     joints_r = torch.FloatTensor(joints_r)
     joints_l = torch.FloatTensor(joints_l)
     verts_r = torch.FloatTensor(verts_r)
@@ -238,7 +239,7 @@ def reform_pred_list(pred_list):
     results_3d['j3d.right'] = joints_r.cpu().numpy()
     results_3d['j3d.left'] = joints_l.cpu().numpy()
     results_3d['im_paths'] = im_paths
-    results_3d['K'] = pred_list[0]['K']
+    results_3d['K'] = K #pred_list[0]['K']
     
     results_2d = {}
     results_2d['v2d.right'] = v2d_r
@@ -273,6 +274,7 @@ def main():
     parser = argparse.ArgumentParser(description='HaMeR demo code')
     parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
     parser.add_argument('--model_name', type=str, required=True, help='Folder with input images')
+    parser.add_argument('--is_dexycb', action='store_true')
     parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
     parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
@@ -280,8 +282,10 @@ def main():
     parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
 
     args = parser.parse_args()
+    is_dexycb = args.is_dexycb
     
-    data_dir = os.path.join(BASE_DATA_DIR, args.model_name)
+    base_data_dir = get_base_data_dir(is_dexycb)
+    data_dir = os.path.join(base_data_dir, args.model_name)
 
     img_folder = os.path.join(data_dir, 'undistorted')
     out_folder = os.path.join(data_dir, 'hand_pred')
@@ -545,7 +549,7 @@ def main():
     out_3d_p = op.join(out_folder, 'v3d.npy')
     out_2d_p = op.join(out_folder, 'j2d.npy')
 
-    results_3d, results_2d, results_mano = reform_pred_list(pred_list)
+    results_3d, results_2d, results_mano = reform_pred_list(pred_list, K)
 
     # vis_2d_keypoint_dir = os.path.join(out_folder, '2d_keypoints')
     # if not os.path.exists(vis_2d_keypoint_dir):
