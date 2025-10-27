@@ -115,6 +115,12 @@ class HAMER(pl.LightningModule):
         device = pred_mano_params['hand_pose'].device
         dtype = pred_mano_params['hand_pose'].dtype
         focal_length = self.cfg.EXTRA.FOCAL_LENGTH * torch.ones(batch_size, 2, device=device, dtype=dtype)
+
+        # https://github.com/shubham-goel/4D-Humans/issues/125
+        # In this case, the original pred_cam[:,0] value corresponds to s, 
+        # the scaling factor of the weak perspective projection, 
+        # which approximates f/Z. So the depth of the human is Z = f/s. 
+        # Then, we also divide by the factor bbox_size/2, so that we project the human to [-0.5,0.5]
         pred_cam_t = torch.stack([pred_cam[:, 1],
                                   pred_cam[:, 2],
                                   2*focal_length[:, 0]/(self.cfg.MODEL.IMAGE_SIZE * pred_cam[:, 0] +1e-9)],dim=-1)
@@ -133,6 +139,8 @@ class HAMER(pl.LightningModule):
         pred_cam_t = pred_cam_t.reshape(-1, 3)
         focal_length = focal_length.reshape(-1, 2)
 
+        # https://github.com/shubham-goel/4D-Humans/issues/41
+        # that's just to map the pred_keypoints_2d to [-0.5,0.5] instead of [-IMAGE_SIZE/2, IMAGE_SIZE/2]
         pred_keypoints_2d = perspective_projection(pred_keypoints_3d,
                                                    translation=pred_cam_t,
                                                    focal_length=focal_length / self.cfg.MODEL.IMAGE_SIZE)

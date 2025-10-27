@@ -18,7 +18,8 @@ from tqdm import tqdm
 
 ### harry
 import pytorch3d.transforms
-from vine_prune.utils.paths import get_base_data_dir
+from vine_prune.utils.general_utils import read_mask, calculate_iou
+from vine_prune.utils.io import read_json
 ###
 
 def visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir):
@@ -273,21 +274,23 @@ from typing import Dict, Optional
 def main():
     parser = argparse.ArgumentParser(description='HaMeR demo code')
     parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
-    parser.add_argument('--model_name', type=str, required=True, help='Folder with input images')
-    parser.add_argument('--is_dexycb', action='store_true')
+    parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
+    parser.add_argument('--vis', action='store_true')
+    parser.add_argument('--iou_thresh', type=float, default=0.40)
     parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
     parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
-    parser.add_argument('--body_detector', type=str, default='regnety', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
+    parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
     parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
 
     args = parser.parse_args()
-    is_dexycb = args.is_dexycb
+    iou_thresh = args.iou_thresh
+    vis = args.vis
     
-    base_data_dir = get_base_data_dir(is_dexycb)
-    data_dir = os.path.join(base_data_dir, args.model_name)
+    data_dir = args.data_dir
 
     img_folder = os.path.join(data_dir, 'undistorted')
+    hand_mask_dir = os.path.join(data_dir, 'masks', 'mask_hand')
     out_folder = os.path.join(data_dir, 'hand_pred')
     vis_folder = os.path.join(out_folder, 'vis')
     K_path = os.path.join(data_dir, 'cam_K.txt')
@@ -338,10 +341,11 @@ def main():
     # Get all demo images ends with .jpg or .png
     img_paths = [img for end in args.file_type for img in Path(img_folder).glob(end)]
     assert len(img_paths) > 0, f"No images found in {img_folder}"
+    img_paths = sorted(img_paths)
 
     K = np.loadtxt(K_path)
     intrinsics = [K[0, 0], K[1, 1], K[0, 2], K[1, 2]]
-    focal_to_use = np.mean([intrinsics[0], intrinsics[2]])
+    # focal_to_use = np.mean([intrinsics[0], intrinsics[1]])
 
     # Iterate over all images in folder
     print('Running inference on images')
@@ -365,7 +369,7 @@ def main():
         # Detect human keypoints for each person
         vitposes_out = cpm.predict_pose(
             #img_cv2,
-            img, # harry updating this as what is used in latest commit for demolpy
+            img, # harry updating this as what is used in latest commit for demo.py
             [np.concatenate([pred_bboxes, pred_scores[:, None]], axis=1)],
         )
 
@@ -394,7 +398,33 @@ def main():
                 bboxes.append(bbox)
                 is_right.append(1)
 
-        if len(bboxes) == 0 or len(bboxes) > 1:
+        img_fn, _ = os.path.splitext(os.path.basename(img_path))
+        mask_path = os.path.join(hand_mask_dir, img_fn + '.png')
+
+        mask = read_mask(mask_path) 
+        assert np.unique(mask).shape[0] == 2
+
+        mask[mask > 0] = 255
+        mask_inds = np.argwhere(mask > 0)
+        mask_box = [mask_inds[:, 1].min(), mask_inds[:, 0].min(), mask_inds[:, 1].max(), mask_inds[:, 0].max()]
+
+        if len(bboxes) == 0:
+            pred_dict = {}
+            pred_dict['succ'] = False
+            pred_dict['img_path'] = str(img_path)
+            pred_list.append(pred_dict)
+            continue
+        elif len(bboxes) > 1:
+            max_iou = -1
+            for box in bboxes:
+                iou = calculate_iou(box, mask_box)
+                if iou > max_iou:
+                    max_iou = iou
+                    new_boxes = np.array([box])
+            bboxes = new_boxes
+
+        iou_test = calculate_iou(bboxes[0], mask_box)
+        if iou_test < iou_thresh:
             pred_dict = {}
             pred_dict['succ'] = False
             pred_dict['img_path'] = str(img_path)
@@ -429,16 +459,23 @@ def main():
             box_size = batch["box_size"].float()
             img_size = batch["img_size"].float()
             multiplier = (2*batch['right']-1)
-            scaled_focal_length = focal_to_use
-            #scaled_focal_length = model_cfg.EXTRA.FOCAL_LENGTH / model_cfg.MODEL.IMAGE_SIZE * img_size.max()
+
+            # https://github.com/geopavlakos/hamer/issues/55
+            # https://github.com/shubham-goel/4D-Humans/issues/129
+            # https://arxiv.org/pdf/2111.07868 Equation 1
+
+            scaled_focal_length = model_cfg.EXTRA.FOCAL_LENGTH / model_cfg.MODEL.IMAGE_SIZE * img_size.max()
             pred_cam_t_full = cam_crop_to_full(pred_cam, box_center, box_size, img_size, 
-                                               intrinsics[2], intrinsics[3], scaled_focal_length).detach().cpu().numpy()
+                                               scaled_focal_length).detach().cpu().numpy()
+
+            #scaled_focal_length = focal_to_use
+            # pred_cam_t_full = cam_crop_to_full(pred_cam, box_center, box_size, img_size, 
+            #                                    intrinsics[2], intrinsics[3], scaled_focal_length).detach().cpu().numpy()
 
             # Render the result
             batch_size = batch['img'].shape[0]
             for n in range(batch_size):
                 # Get filename from path img_path
-                img_fn, _ = os.path.splitext(os.path.basename(img_path))
                 person_id = int(batch['personid'][n])
                 white_img = (torch.ones_like(batch['img'][n]).cpu() - DEFAULT_MEAN[:,None,None]/255) / (DEFAULT_STD[:,None,None]/255)
                 input_patch = batch['img'][n].cpu() * (DEFAULT_STD[:,None,None]/255) + (DEFAULT_MEAN[:,None,None]/255)
@@ -473,11 +510,12 @@ def main():
                 global_orient = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['global_orient'])[n].detach().cpu().numpy()
                 hand_pose = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['hand_pose'])[n].detach().cpu().numpy()
 
-                try:
-                    jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[0].detach().cpu().numpy()
-                except:
-                    breakpoint()
+                jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[0].detach().cpu().numpy()
                 verts_2d = (out['pred_vertices_2d']*box_size+box_center)[0].detach().cpu().numpy()
+
+                # question for me, will that output the same as projecting pred_cam_t_full?
+                # https://github.com/geopavlakos/hamer/issues/20
+                # may have the answer
                 ###
                 
                 is_right = batch['right'][n].cpu().numpy()
@@ -551,25 +589,26 @@ def main():
 
     results_3d, results_2d, results_mano = reform_pred_list(pred_list, K)
 
-    # vis_2d_keypoint_dir = os.path.join(out_folder, '2d_keypoints')
-    # if not os.path.exists(vis_2d_keypoint_dir):
-    #     os.mkdir(vis_2d_keypoint_dir)
+    if vis:
+        # # vis_2d_keypoint_dir = os.path.join(out_folder, '2d_keypoints')
+        # # if not os.path.exists(vis_2d_keypoint_dir):
+        # #     os.mkdir(vis_2d_keypoint_dir)
 
-    ### harry
-    vis_h_2d_keypoint_dir = os.path.join(out_folder, '2d_h_keypoints')
-    if not os.path.exists(vis_h_2d_keypoint_dir):
-        os.mkdir(vis_h_2d_keypoint_dir)
+        # ### harry
+        vis_h_2d_keypoint_dir = os.path.join(out_folder, '2d_h_keypoints')
+        if not os.path.exists(vis_h_2d_keypoint_dir):
+            os.mkdir(vis_h_2d_keypoint_dir)
 
-    vis_h_2d_hpe_dir = os.path.join(out_folder, '2d_h_hpe')
-    if not os.path.exists(vis_h_2d_hpe_dir):
-        os.mkdir(vis_h_2d_hpe_dir)
-    ###
+        vis_h_2d_hpe_dir = os.path.join(out_folder, '2d_h_hpe')
+        if not os.path.exists(vis_h_2d_hpe_dir):
+            os.mkdir(vis_h_2d_hpe_dir)
+        # ###
 
-    # vis_2d_hpe_dir = os.path.join(out_folder, '2d_hpe')
-    # if not os.path.exists(vis_2d_hpe_dir):
-    #     os.mkdir(vis_2d_hpe_dir)
+        # # vis_2d_hpe_dir = os.path.join(out_folder, '2d_hpe')
+        # # if not os.path.exists(vis_2d_hpe_dir):
+        # #     os.mkdir(vis_2d_hpe_dir)
 
-    visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir)
+        visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir)
 
     np.save(out_3d_p, results_3d)
     np.save(out_2d_p, results_2d)
