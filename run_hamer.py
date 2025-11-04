@@ -276,15 +276,15 @@ def main():
     parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
     parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
     parser.add_argument('--vis', action='store_true')
-    parser.add_argument('--iou_thresh', type=float, default=0.40)
+    # parser.add_argument('--iou_thresh', type=float, default=0.40)
     parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
     parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
-    parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
+    # parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
     parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
 
     args = parser.parse_args()
-    iou_thresh = args.iou_thresh
+    # iou_thresh = args.iou_thresh
     vis = args.vis
     
     data_dir = args.data_dir
@@ -304,26 +304,26 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # Load detector
-    from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
-    if args.body_detector == 'vitdet':
-        from detectron2.config import LazyConfig
-        import hamer
-        cfg_path = Path(hamer.__file__).parent/'configs'/'cascade_mask_rcnn_vitdet_h_75ep.py'
-        detectron2_cfg = LazyConfig.load(str(cfg_path))
-        detectron2_cfg.train.init_checkpoint = "https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/cascade_mask_rcnn_vitdet_h/f328730692/model_final_f05665.pkl"
-        for i in range(3):
-            detectron2_cfg.model.roi_heads.box_predictors[i].test_score_thresh = 0.25
-        detector = DefaultPredictor_Lazy(detectron2_cfg)
-    elif args.body_detector == 'regnety':
-        from detectron2 import model_zoo
-        from detectron2.config import get_cfg
-        detectron2_cfg = model_zoo.get_config('new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py', trained=True)
-        detectron2_cfg.model.roi_heads.box_predictor.test_score_thresh = 0.5
-        # detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh   = 0.4
-        ### harry
-        detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh = 0.1
-        detector       = DefaultPredictor_Lazy(detectron2_cfg)
+    # # Load detector
+    # from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
+    # if args.body_detector == 'vitdet':
+    #     from detectron2.config import LazyConfig
+    #     import hamer
+    #     cfg_path = Path(hamer.__file__).parent/'configs'/'cascade_mask_rcnn_vitdet_h_75ep.py'
+    #     detectron2_cfg = LazyConfig.load(str(cfg_path))
+    #     detectron2_cfg.train.init_checkpoint = "https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/cascade_mask_rcnn_vitdet_h/f328730692/model_final_f05665.pkl"
+    #     for i in range(3):
+    #         detectron2_cfg.model.roi_heads.box_predictors[i].test_score_thresh = 0.25
+    #     detector = DefaultPredictor_Lazy(detectron2_cfg)
+    # elif args.body_detector == 'regnety':
+    #     from detectron2 import model_zoo
+    #     from detectron2.config import get_cfg
+    #     detectron2_cfg = model_zoo.get_config('new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py', trained=True)
+    #     detectron2_cfg.model.roi_heads.box_predictor.test_score_thresh = 0.5
+    #     # detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh   = 0.4
+    #     ### harry
+    #     detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh = 0.1
+    #     detector       = DefaultPredictor_Lazy(detectron2_cfg)
 
     # keypoint detector
     cpm = ViTPoseModel(device)
@@ -351,20 +351,31 @@ def main():
     print('Running inference on images')
     pred_list = []
     for _, img_path in enumerate(tqdm(img_paths)):
-        # debug_num = int(os.path.basename(img_path).split('.')[0])
-        # if debug_num != 13:
-        #     continue
+        ### get mask box
+        img_fn, _ = os.path.splitext(os.path.basename(img_path))
+        mask_path = os.path.join(hand_mask_dir, img_fn + '.png')
+
+        mask = read_mask(mask_path) 
+        assert np.unique(mask).shape[0] == 2
+
+        mask[mask > 0] = 255
+        mask_inds = np.argwhere(mask > 0)
+        mask_box = [mask_inds[:, 1].min(), mask_inds[:, 0].min(), mask_inds[:, 1].max(), mask_inds[:, 0].max()]
+        ###
 
         img_cv2 = cv2.imread(str(img_path))
 
-        # Detect humans in image
-        det_out = detector(img_cv2)
+        # # Detect humans in image
+        # det_out = detector(img_cv2)
+        # det_instances = det_out['instances']
+        # valid_idx = (det_instances.pred_classes==0) & (det_instances.scores > 0.5)
+        # pred_bboxes=det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
+        # pred_scores=det_instances.scores[valid_idx].cpu().numpy()
+        
+        pred_bboxes = np.array([mask_box]) + np.array([[-20, -20, 20, 20]])
+        pred_scores = 0.9*np.ones((pred_bboxes.shape[0]))
+        
         img = img_cv2.copy()[:, :, ::-1]
-
-        det_instances = det_out['instances']
-        valid_idx = (det_instances.pred_classes==0) & (det_instances.scores > 0.5)
-        pred_bboxes=det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
-        pred_scores=det_instances.scores[valid_idx].cpu().numpy()
 
         # Detect human keypoints for each person
         vitposes_out = cpm.predict_pose(
@@ -398,16 +409,6 @@ def main():
                 bboxes.append(bbox)
                 is_right.append(1)
 
-        img_fn, _ = os.path.splitext(os.path.basename(img_path))
-        mask_path = os.path.join(hand_mask_dir, img_fn + '.png')
-
-        mask = read_mask(mask_path) 
-        assert np.unique(mask).shape[0] == 2
-
-        mask[mask > 0] = 255
-        mask_inds = np.argwhere(mask > 0)
-        mask_box = [mask_inds[:, 1].min(), mask_inds[:, 0].min(), mask_inds[:, 1].max(), mask_inds[:, 0].max()]
-
         if len(bboxes) == 0:
             pred_dict = {}
             pred_dict['succ'] = False
@@ -415,6 +416,7 @@ def main():
             pred_list.append(pred_dict)
             continue
         elif len(bboxes) > 1:
+            raise RuntimeError('should not happen')
             max_iou = -1
             for box in bboxes:
                 iou = calculate_iou(box, mask_box)
@@ -423,13 +425,13 @@ def main():
                     new_boxes = np.array([box])
             bboxes = new_boxes
 
-        iou_test = calculate_iou(bboxes[0], mask_box)
-        if iou_test < iou_thresh:
-            pred_dict = {}
-            pred_dict['succ'] = False
-            pred_dict['img_path'] = str(img_path)
-            pred_list.append(pred_dict)
-            continue
+        # iou_test = calculate_iou(bboxes[0], mask_box)
+        # if iou_test < iou_thresh:
+        #     pred_dict = {}
+        #     pred_dict['succ'] = False
+        #     pred_dict['img_path'] = str(img_path)
+        #     pred_list.append(pred_dict)
+        #     continue
 
         boxes = np.stack(bboxes)
         right = np.stack(is_right)
