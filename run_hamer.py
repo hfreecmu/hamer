@@ -20,6 +20,7 @@ from tqdm import tqdm
 import pytorch3d.transforms
 from vine_prune.utils.general_utils import read_mask, calculate_iou
 from vine_prune.utils.io import read_json
+from vine_prune.utils.run import run_with_log
 ###
 
 def visualize_2d(results_2d, vis_h_2d_keypoint_dir, vis_h_2d_hpe_dir):
@@ -271,19 +272,19 @@ def reform_pred_list(pred_list, K):
 import json
 from typing import Dict, Optional
 
-def main():
-    parser = argparse.ArgumentParser(description='HaMeR demo code')
-    parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
-    parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
-    parser.add_argument('--vis', action='store_true')
-    # parser.add_argument('--iou_thresh', type=float, default=0.40)
-    parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
-    parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
-    # parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
-    parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
+def main(args):
+    # parser = argparse.ArgumentParser(description='HaMeR demo code')
+    # parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
+    # parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
+    # parser.add_argument('--vis', action='store_true')
+    # # parser.add_argument('--iou_thresh', type=float, default=0.40)
+    # parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
+    # parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
+    # parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
+    # # parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
+    # parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
     # iou_thresh = args.iou_thresh
     vis = args.vis
     
@@ -623,5 +624,23 @@ def main():
     print(f"Saved mano results to {out_mano_p}")
     ###
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='HaMeR demo code')
+    parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
+    parser.add_argument('--data_dir', type=str, required=True, help='Folder with input images')
+    parser.add_argument('--vis', action='store_true')
+    # parser.add_argument('--iou_thresh', type=float, default=0.40)
+    parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
+    parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
+    # parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
+    parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
+
+    args = parser.parse_args()
+
+    return args
+
 if __name__ == '__main__':
-    main()
+    # main()
+    args = parse_args()
+    run_with_log(main, args, 'run_hamer', args.data_dir)
