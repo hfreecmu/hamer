@@ -336,7 +336,7 @@ def main(args):
     if not os.path.exists(out_folder):
         os.mkdir(out_folder)
 
-    if not os.path.exists(vis_folder):
+    if vis and not os.path.exists(vis_folder):
         os.mkdir(vis_folder)
 
     # Get all demo images ends with .jpg or .png
@@ -557,7 +557,7 @@ def main(args):
                 #     tmesh.export(os.path.join(args.out_folder, f'{img_fn}_{person_id}.obj'))
 
         # Render front view
-        if args.full_frame and len(all_verts) > 0:
+        if vis and args.full_frame and len(all_verts) > 0:
             misc_args = dict(
                 mesh_base_color=LIGHT_BLUE,
                 scene_bg_color=(1, 1, 1),
