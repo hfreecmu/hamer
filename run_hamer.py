@@ -291,7 +291,7 @@ def main(args):
     data_dir = args.data_dir
 
     img_folder = os.path.join(data_dir, 'undistorted')
-    hand_mask_dir = os.path.join(data_dir, 'masks', 'mask_hand')
+    hand_mask_dir = os.path.join(data_dir, 'masks', 'hand')
     out_folder = os.path.join(data_dir, 'hand_pred')
     vis_folder = os.path.join(out_folder, 'vis')
     K_path = os.path.join(data_dir, 'cam_K.txt')
@@ -357,9 +357,6 @@ def main(args):
         mask_path = os.path.join(hand_mask_dir, img_fn + '.png')
 
         mask = read_mask(mask_path) 
-        assert np.unique(mask).shape[0] == 2
-
-        mask[mask > 0] = 255
         mask_inds = np.argwhere(mask > 0)
         mask_box = [mask_inds[:, 1].min(), mask_inds[:, 0].min(), mask_inds[:, 1].max(), mask_inds[:, 0].max()]
         ###
