@@ -19,7 +19,6 @@ from tqdm import tqdm
 ### harry
 import pytorch3d.transforms
 from vine_prune.utils.general_utils import read_mask, calculate_iou
-from vine_prune.utils.io import read_json
 from vine_prune.utils.run import run_with_log
 ###
 
@@ -290,6 +289,8 @@ def main(args):
     
     data_dir = args.data_dir
 
+    is_right_info = None
+
     img_folder = os.path.join(data_dir, 'undistorted')
     hand_mask_dir = os.path.join(data_dir, 'masks', 'hand')
     out_folder = os.path.join(data_dir, 'hand_pred')
@@ -390,22 +391,31 @@ def main(args):
             left_hand_keyp = vitposes['keypoints'][-42:-21]
             right_hand_keyp = vitposes['keypoints'][-21:]
 
-            # Rejecting not confident detections
+            # Rejecting not confident detections   
 
-            # right now only want right hand
-            # keyp = left_hand_keyp
-            # valid = keyp[:,2] > 0.5
-            # if sum(valid) > 3:
-            #     bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
-            #     bboxes.append(bbox)
-            #     is_right.append(0)
+            is_left_sum = left_hand_keyp[:, 2].sum()
+            is_right_sum = right_hand_keyp[:, 2].sum()
+            frame_is_right = is_right_sum >= is_left_sum
 
-            keyp = right_hand_keyp
-            valid = keyp[:,2] > 0.5
-            if sum(valid) > 3:
-                bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
-                bboxes.append(bbox)
-                is_right.append(1)
+            if is_right_info is None:
+                is_right_info = frame_is_right
+            elif is_right_info != frame_is_right:
+                raise RuntimeError('right left mismatch')
+
+            if is_right_info:
+                keyp = right_hand_keyp
+                valid = keyp[:,2] > 0.5
+                if sum(valid) > 3:
+                    bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
+                    bboxes.append(bbox)
+                    is_right.append(1)
+            else:
+                keyp = left_hand_keyp
+                valid = keyp[:,2] > 0.5
+                if sum(valid) > 3:
+                    bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
+                    bboxes.append(bbox)
+                    is_right.append(0)
 
         if len(bboxes) == 0:
             pred_dict = {}
@@ -458,7 +468,6 @@ def main(args):
             box_center = batch["box_center"].float()
             box_size = batch["box_size"].float()
             img_size = batch["img_size"].float()
-            multiplier = (2*batch['right']-1)
 
             # https://github.com/geopavlakos/hamer/issues/55
             # https://github.com/shubham-goel/4D-Humans/issues/129
@@ -510,8 +519,13 @@ def main(args):
                 global_orient = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['global_orient'])[n].detach().cpu().numpy()
                 hand_pose = pytorch3d.transforms.matrix_to_axis_angle(out['pred_mano_params']['hand_pose'])[n].detach().cpu().numpy()
 
-                jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[0].detach().cpu().numpy()
-                verts_2d = (out['pred_vertices_2d']*box_size+box_center)[0].detach().cpu().numpy()
+                jts_2d = (out['pred_keypoints_2d']*box_size+box_center)[n].detach().cpu().numpy()
+                verts_2d = (out['pred_vertices_2d']*box_size+box_center)[n].detach().cpu().numpy()
+
+                mult = (2*batch['right'][n] - 1).cpu().numpy()
+                box_center_np = box_center[n].cpu().numpy()
+                jts_2d[:,0]   = mult * (jts_2d[:,0]   - box_center_np[0]) + box_center_np[0]
+                verts_2d[:,0] = mult * (verts_2d[:,0] - box_center_np[0]) + box_center_np[0]
 
                 # question for me, will that output the same as projecting pred_cam_t_full?
                 # https://github.com/geopavlakos/hamer/issues/20
@@ -558,8 +572,8 @@ def main(args):
             misc_args = dict(
                 mesh_base_color=LIGHT_BLUE,
                 scene_bg_color=(1, 1, 1),
-                # intrinsics=[scaled_focal_length, scaled_focal_length, img_size[n][0]//2, img_size[n][1]//2],
-                intrinsics=[scaled_focal_length, scaled_focal_length, intrinsics[2], intrinsics[3]],
+                intrinsics=[scaled_focal_length, scaled_focal_length, img_size[n][0]//2, img_size[n][1]//2],
+                # intrinsics=[scaled_focal_length, scaled_focal_length, intrinsics[2], intrinsics[3]],
                 # focal_length=scaled_focal_length,
             )
             cam_view = renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
@@ -580,8 +594,6 @@ def main(args):
 
             # cv2.imwrite(os.path.join(vis_folder, f'{img_fn}_pts_2d.jpg'), pred_2d_jts_img)
             ###
-
-
 
     import os.path as op
     out_3d_p = op.join(out_folder, 'v3d.npy')
