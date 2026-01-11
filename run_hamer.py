@@ -352,7 +352,7 @@ def main(args):
     # Iterate over all images in folder
     print('Running inference on images')
     pred_list = []
-    for _, img_path in enumerate(tqdm(img_paths)):
+    for img_ind, img_path in enumerate(tqdm(img_paths)):
         ### get mask box
         img_fn, _ = os.path.splitext(os.path.basename(img_path))
         mask_path = os.path.join(hand_mask_dir, img_fn + '.png')
@@ -397,10 +397,15 @@ def main(args):
             is_right_sum = right_hand_keyp[:, 2].sum()
             frame_is_right = is_right_sum >= is_left_sum
 
+            if img_ind == 0 and is_right_info is not None:
+                raise RuntimeError('mult dets first frame')
+
             if is_right_info is None:
                 is_right_info = frame_is_right
             elif is_right_info != frame_is_right:
-                raise RuntimeError('right left mismatch')
+                # raise RuntimeError('right left mismatch')
+                print('right left mismatch, skipping')
+                continue
 
             if is_right_info:
                 keyp = right_hand_keyp
