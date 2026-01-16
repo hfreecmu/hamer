@@ -402,10 +402,10 @@ def main(args):
 
             if is_right_info is None:
                 is_right_info = frame_is_right
-            elif is_right_info != frame_is_right:
-                # raise RuntimeError('right left mismatch')
-                print('right left mismatch, skipping')
-                continue
+            # elif is_right_info != frame_is_right:
+            #     # raise RuntimeError('right left mismatch')
+            #     print('right left mismatch, skipping')
+            #     continue
 
             if is_right_info:
                 keyp = right_hand_keyp
