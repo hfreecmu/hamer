@@ -410,6 +410,8 @@ def main(args):
             if is_right_info:
                 keyp = right_hand_keyp
                 valid = keyp[:,2] > 0.5
+                # for glove
+                # valid = keyp[:,2] > 0.3
                 if sum(valid) > 3:
                     bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                     bboxes.append(bbox)
@@ -417,6 +419,8 @@ def main(args):
             else:
                 keyp = left_hand_keyp
                 valid = keyp[:,2] > 0.5
+                # for glove
+                # valid = keyp[:,2] > 0.3
                 if sum(valid) > 3:
                     bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                     bboxes.append(bbox)
