@@ -163,6 +163,9 @@ def reform_pred_list(pred_list, K):
     joints_l_2d = np.zeros((len(im_paths), 21, 2))*np.nan
     verts_r_2d = np.zeros((len(im_paths), 778, 2))*np.nan
     verts_l_2d = np.zeros((len(im_paths), 778, 2))*np.nan
+
+    vit_r_kpts = np.zeros((len(im_paths), 21, 3))*np.nan
+    vit_l_kpts = np.zeros((len(im_paths), 21, 3))*np.nan
     ###
 
     for pred_dict in pred_list:
@@ -181,6 +184,8 @@ def reform_pred_list(pred_list, K):
 
         j2d_cam = pred_dict['jts_2d']
         verts_cam = pred_dict['verts_2d']
+
+        vit_kpts = pred_dict['vit_kpts']
         ###
 
         idx = im_paths.index(pred_dict['img_path'])
@@ -196,6 +201,8 @@ def reform_pred_list(pred_list, K):
             shape_r[idx] = shape
             joints_r_2d[idx] = j2d_cam
             verts_r_2d[idx] = verts_cam
+
+            vit_r_kpts[idx] = vit_kpts
             ###
         else:
             verts_l[idx] = v3d_cam
@@ -208,6 +215,8 @@ def reform_pred_list(pred_list, K):
             shape_l[idx] = shape
             joints_l_2d[idx] = j2d_cam
             verts_l_2d[idx] = verts_cam
+
+            vit_l_kpts[idx] = vit_kpts
             ###
 
     verts_r = verts_r.astype(np.float32)
@@ -220,6 +229,9 @@ def reform_pred_list(pred_list, K):
     joints_l_2d = joints_l_2d.astype(np.float32)
     verts_r_2d = verts_r_2d.astype(np.float32)
     verts_l_2d = verts_l_2d.astype(np.float32)
+
+    vit_r_kpts = vit_r_kpts.astype(np.float32)
+    vit_l_kpts = vit_l_kpts.astype(np.float32)
     ###
     
     # K = torch.FloatTensor(pred_list[0]['K'])
@@ -264,6 +276,9 @@ def reform_pred_list(pred_list, K):
     results_2d['j2d_real.left'] = joints_l_2d
     results_2d['v2d_real.right'] = verts_r_2d
     results_2d['v2d_real.left'] = verts_l_2d
+
+    results_2d['vit_kpts.right'] = vit_r_kpts
+    results_2d['vit_kpts.left'] = vit_l_kpts
     ### harry
 
     return results_3d, results_2d, results_mano
@@ -346,7 +361,7 @@ def main(args):
     img_paths = sorted(img_paths)
 
     K = np.loadtxt(K_path)
-    intrinsics = [K[0, 0], K[1, 1], K[0, 2], K[1, 2]]
+    # intrinsics = [K[0, 0], K[1, 1], K[0, 2], K[1, 2]]
     # focal_to_use = np.mean([intrinsics[0], intrinsics[1]])
 
     # Iterate over all images in folder
@@ -384,6 +399,7 @@ def main(args):
         )
 
         bboxes = []
+        vit_kpts = []
         is_right = []
 
         # Use hands based on hand keypoint detections
@@ -411,20 +427,22 @@ def main(args):
                 keyp = right_hand_keyp
                 valid = keyp[:,2] > 0.5
                 # for glove
-                # valid = keyp[:,2] > 0.3
+                valid = keyp[:,2] > 0.3
                 if sum(valid) > 3:
                     bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                     bboxes.append(bbox)
                     is_right.append(1)
+                    vit_kpts.append(keyp)
             else:
                 keyp = left_hand_keyp
                 valid = keyp[:,2] > 0.5
                 # for glove
-                # valid = keyp[:,2] > 0.3
+                valid = keyp[:,2] > 0.3
                 if sum(valid) > 3:
                     bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                     bboxes.append(bbox)
                     is_right.append(0)
+                    vit_kpts.append(keyp)
 
         if len(bboxes) == 0:
             pred_dict = {}
@@ -452,9 +470,11 @@ def main(args):
 
         boxes = np.stack(bboxes)
         right = np.stack(is_right)
+        vit_kpts = np.stack(vit_kpts)
 
         # Run reconstruction on all detected hands
-        dataset = ViTDetDataset(model_cfg, img_cv2, boxes, right, rescale_factor=args.rescale_factor)
+        dataset = ViTDetDataset(model_cfg, img_cv2, boxes, right, rescale_factor=args.rescale_factor,
+                                vit_kpts=vit_kpts)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False, num_workers=0)
 
         all_verts = []
@@ -477,6 +497,7 @@ def main(args):
             box_center = batch["box_center"].float()
             box_size = batch["box_size"].float()
             img_size = batch["img_size"].float()
+            vit_kpts_batch = batch['vit_kpts']
 
             # https://github.com/geopavlakos/hamer/issues/55
             # https://github.com/shubham-goel/4D-Humans/issues/129
@@ -561,6 +582,7 @@ def main(args):
                 pred_dict['hand_pose'] = hand_pose
                 pred_dict['jts_2d'] = jts_2d
                 pred_dict['verts_2d'] = verts_2d
+                pred_dict['vit_kpts'] = vit_kpts_batch[n].cpu().numpy()
 
                 all_2d_pts.append(jts_2d)
                 all_2d_verts.append(verts_2d)
@@ -610,7 +632,7 @@ def main(args):
 
     results_3d, results_2d, results_mano = reform_pred_list(pred_list, K)
 
-    if vis:
+    if False and vis:
         # # vis_2d_keypoint_dir = os.path.join(out_folder, '2d_keypoints')
         # # if not os.path.exists(vis_2d_keypoint_dir):
         # #     os.mkdir(vis_2d_keypoint_dir)

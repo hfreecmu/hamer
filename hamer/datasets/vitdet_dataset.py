@@ -22,11 +22,13 @@ class ViTDetDataset(torch.utils.data.Dataset):
                  right: np.array,
                  rescale_factor=2.5,
                  train: bool = False,
+                 vit_kpts: np.array = None,
                  **kwargs):
         super().__init__()
         self.cfg = cfg
         self.img_cv2 = img_cv2
         # self.boxes = boxes
+        self.vit_kpts = vit_kpts
 
         assert train == False, "ViTDetDataset is only for inference"
         self.train = train
@@ -92,4 +94,6 @@ class ViTDetDataset(torch.utils.data.Dataset):
         item['box_size'] = bbox_size
         item['img_size'] = 1.0 * np.array([cvimg.shape[1], cvimg.shape[0]])
         item['right'] = self.right[idx].copy()
+        if self.vit_kpts is not None:
+            item['vit_kpts'] = self.vit_kpts[idx].copy()
         return item
